@@ -1,0 +1,243 @@
+--// JOHNBER HUB
+--// Own Roblox Studio Experience / Developer Testing Tool
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+
+local EggsFolder = workspace:WaitForChild("Eggs")
+local Base = workspace:WaitForChild("Base")
+
+local AutoSteal = false
+local ShowBestEgg = true
+local CurrentHighlight
+
+--// CHARACTER
+local function getCharacter()
+    return Player.Character or Player.CharacterAdded:Wait()
+end
+
+local function getRoot()
+    local Character = getCharacter()
+    return Character:WaitForChild("HumanoidRootPart")
+end
+
+--// FIND BEST EGG
+local function getBestEgg()
+    local BestEgg = nil
+    local BestValue = -math.huge
+
+    for _, Egg in ipairs(EggsFolder:GetChildren()) do
+        if Egg:IsA("Model") or Egg:IsA("BasePart") then
+            local Value = Egg:GetAttribute("RarityValue") or 0
+
+            if Value > BestValue then
+                BestValue = Value
+                BestEgg = Egg
+            end
+        end
+    end
+
+    return BestEgg
+end
+
+local function getEggPosition(Egg)
+    if Egg:IsA("Model") then
+        return Egg:GetPivot().Position
+    elseif Egg:IsA("BasePart") then
+        return Egg.Position
+    end
+end
+
+--// HIGHLIGHT BEST EGG
+local function updateHighlight()
+    if CurrentHighlight then
+        CurrentHighlight:Destroy()
+        CurrentHighlight = nil
+    end
+
+    if not ShowBestEgg then
+        return
+    end
+
+    local BestEgg = getBestEgg()
+
+    if BestEgg then
+        local Highlight = Instance.new("Highlight")
+        Highlight.Name = "JohnberBestEgg"
+        Highlight.Adornee = BestEgg
+        Highlight.FillTransparency = 0.45
+        Highlight.OutlineTransparency = 0
+        Highlight.Parent = BestEgg
+
+        CurrentHighlight = Highlight
+    end
+end
+
+--// TELEPORT TO BEST EGG
+local function teleportToEgg()
+    local Egg = getBestEgg()
+
+    if Egg then
+        local Position = getEggPosition(Egg)
+
+        if Position then
+            getRoot().CFrame = CFrame.new(Position + Vector3.new(0, 4, 0))
+        end
+    end
+end
+
+--// RETURN TO BASE
+local function returnToBase()
+    local Root = getRoot()
+
+    if Base:IsA("BasePart") then
+        Root.CFrame = Base.CFrame + Vector3.new(0, 4, 0)
+    end
+end
+
+--// AUTO STEAL
+-- For your own game, call your legitimate collection system here.
+local function collectBestEgg()
+    local Egg = getBestEgg()
+
+    if not Egg then
+        return
+    end
+
+    -- Example:
+    -- Your server-side egg collection system should handle
+    -- ownership, rewards, cooldowns, and validation here.
+
+    print("[Johnber Hub] Selected:", Egg.Name)
+end
+
+--// GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JohnberHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 330, 0, 390)
+Main.Position = UDim2.new(0.5, -165, 0.5, -195)
+Main.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 14)
+Corner.Parent = Main
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(0, 170, 255)
+Stroke.Thickness = 2
+Stroke.Parent = Main
+
+--// TITLE
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 60)
+Title.BackgroundTransparency = 1
+Title.Text = "👑 JOHNBER HUB"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 25
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Main
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Size = UDim2.new(1, 0, 0, 25)
+Subtitle.Position = UDim2.new(0, 0, 0, 48)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "STEAL AN EGG • DEVELOPER TOOL"
+Subtitle.TextColor3 = Color3.fromRGB(0, 170, 255)
+Subtitle.TextSize = 11
+Subtitle.Font = Enum.Font.GothamBold
+Subtitle.Parent = Main
+
+--// BUTTON CREATOR
+local function createButton(Text, Y)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -40, 0, 48)
+    Button.Position = UDim2.new(0, 20, 0, Y)
+    Button.BackgroundColor3 = Color3.fromRGB(25, 35, 50)
+    Button.Text = Text
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.TextSize = 15
+    Button.Font = Enum.Font.GothamBold
+    Button.AutoButtonColor = true
+    Button.Parent = Main
+
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 10)
+    ButtonCorner.Parent = Button
+
+    return Button
+end
+
+--// BUTTONS
+local AutoButton = createButton("🥚 Auto Steal: OFF", 90)
+local TeleportButton = createButton("📍 Teleport to Best Egg", 150)
+local BaseButton = createButton("🏠 Return to Base", 210)
+local VisualButton = createButton("👁️ Best Egg Visual: ON", 270)
+
+--// AUTO STEAL TOGGLE
+AutoButton.MouseButton1Click:Connect(function()
+    AutoSteal = not AutoSteal
+
+    if AutoSteal then
+        AutoButton.Text = "🥚 Auto Steal: ON"
+    else
+        AutoButton.Text = "🥚 Auto Steal: OFF"
+    end
+end)
+
+--// TELEPORT
+TeleportButton.MouseButton1Click:Connect(function()
+    teleportToEgg()
+    collectBestEgg()
+end)
+
+--// BASE
+BaseButton.MouseButton1Click:Connect(function()
+    returnToBase()
+end)
+
+--// VISUAL
+VisualButton.MouseButton1Click:Connect(function()
+    ShowBestEgg = not ShowBestEgg
+
+    if ShowBestEgg then
+        VisualButton.Text = "👁️ Best Egg Visual: ON"
+    else
+        VisualButton.Text = "👁️ Best Egg Visual: OFF"
+    end
+
+    updateHighlight()
+end)
+
+--// AUTO LOOP
+task.spawn(function()
+    while true do
+        task.wait(1)
+
+        if AutoSteal then
+            teleportToEgg()
+            collectBestEgg()
+            task.wait(0.5)
+            returnToBase()
+        end
+    end
+end)
+
+--// UPDATE BEST EGG VISUAL
+task.spawn(function()
+    while true do
+        task.wait(2)
+        updateHighlight()
+    end
+end)
+
+updateHighlight()
+
+print("👑 Johnber Hub loaded!")

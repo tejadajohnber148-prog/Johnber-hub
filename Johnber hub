@@ -1,0 +1,389 @@
+--// JOHNBER HUB
+--// For your own Roblox Studio experience
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "JohnberHub"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+--==================================================
+-- OPEN / CLOSE ICON
+--==================================================
+
+local toggle = Instance.new("TextButton")
+toggle.Name = "OpenCloseIcon"
+toggle.Size = UDim2.fromOffset(55,55)
+toggle.Position = UDim2.new(0,20,0.5,-27)
+toggle.BackgroundColor3 = Color3.fromRGB(35,35,45)
+toggle.BorderSizePixel = 0
+toggle.Text = "⚡"
+toggle.TextColor3 = Color3.new(1,1,1)
+toggle.TextSize = 28
+toggle.Font = Enum.Font.GothamBold
+toggle.Parent = gui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1,0)
+toggleCorner.Parent = toggle
+
+--==================================================
+-- MAIN
+--==================================================
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(440,320)
+main.Position = UDim2.new(.5,-220,.5,-160)
+main.BackgroundColor3 = Color3.fromRGB(24,24,30)
+main.BorderSizePixel = 0
+main.Parent = gui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0,14)
+mainCorner.Parent = main
+
+--==================================================
+-- TITLE
+--==================================================
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-60,0,55)
+title.Position = UDim2.fromOffset(18,0)
+title.BackgroundTransparency = 1
+title.Text = "⚡ JOHNBER HUB"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextSize = 23
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = main
+
+--==================================================
+-- CLOSE BUTTON
+--==================================================
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.fromOffset(42,42)
+close.Position = UDim2.new(1,-50,0,7)
+close.BackgroundTransparency = 1
+close.Text = "✕"
+close.TextColor3 = Color3.fromRGB(255,80,80)
+close.TextSize = 22
+close.Font = Enum.Font.GothamBold
+close.Parent = main
+
+-- Close = hide only
+close.MouseButton1Click:Connect(function()
+	main.Visible = false
+	toggle.Visible = true
+	toggle.Text = "⚡"
+end)
+
+-- Open / close floating icon
+toggle.MouseButton1Click:Connect(function()
+	main.Visible = not main.Visible
+
+	if main.Visible then
+		toggle.Text = "✕"
+	else
+		toggle.Text = "⚡"
+	end
+end)
+
+--==================================================
+-- CONTAINER
+--==================================================
+
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1,-30,1,-70)
+container.Position = UDim2.fromOffset(15,60)
+container.BackgroundTransparency = 1
+container.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,8)
+layout.Parent = container
+
+--==================================================
+-- CHARACTER
+--==================================================
+
+local humanoid
+local root
+
+local function character()
+	local char = player.Character or player.CharacterAdded:Wait()
+	humanoid = char:WaitForChild("Humanoid")
+	root = char:WaitForChild("HumanoidRootPart")
+end
+
+character()
+
+player.CharacterAdded:Connect(function()
+	task.wait(.5)
+	character()
+end)
+
+--==================================================
+-- TOGGLE BUTTON
+--==================================================
+
+local function makeToggle(icon,name,callback)
+
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1,0,0,42)
+	button.BackgroundColor3 = Color3.fromRGB(42,42,52)
+	button.BorderSizePixel = 0
+	button.Text = icon.."  "..name.."  [OFF]"
+	button.TextColor3 = Color3.new(1,1,1)
+	button.TextSize = 15
+	button.Font = Enum.Font.GothamBold
+	button.Parent = container
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,9)
+	corner.Parent = button
+
+	local enabled = false
+
+	button.MouseButton1Click:Connect(function()
+
+		enabled = not enabled
+
+		button.Text =
+			icon.."  "..name.."  ["..
+			(enabled and "ON" or "OFF").."]"
+
+		callback(enabled)
+
+	end)
+
+	return button
+end
+
+--==================================================
+-- SPEED
+--==================================================
+
+local normalSpeed = 16
+local fastSpeed = 50
+
+makeToggle("⚡","Speed",function(on)
+
+	if humanoid then
+		humanoid.WalkSpeed =
+			on and fastSpeed or normalSpeed
+	end
+
+end)
+
+--==================================================
+-- FLY
+--==================================================
+
+local flying = false
+local flyConnection
+
+makeToggle("🪽","Fly",function(on)
+
+	flying = on
+
+	if flyConnection then
+		flyConnection:Disconnect()
+		flyConnection = nil
+	end
+
+	if flying then
+
+		flyConnection = RunService.RenderStepped:Connect(function()
+
+			if not root then return end
+
+			local camera = workspace.CurrentCamera
+			local direction = Vector3.zero
+
+			if UIS:IsKeyDown(Enum.KeyCode.W) then
+				direction += camera.CFrame.LookVector
+			end
+
+			if UIS:IsKeyDown(Enum.KeyCode.S) then
+				direction -= camera.CFrame.LookVector
+			end
+
+			if UIS:IsKeyDown(Enum.KeyCode.A) then
+				direction -= camera.CFrame.RightVector
+			end
+
+			if UIS:IsKeyDown(Enum.KeyCode.D) then
+				direction += camera.CFrame.RightVector
+			end
+
+			if UIS:IsKeyDown(Enum.KeyCode.Space) then
+				direction += Vector3.yAxis
+			end
+
+			if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+				direction -= Vector3.yAxis
+			end
+
+			if direction.Magnitude > 0 then
+				root.AssemblyLinearVelocity =
+					direction.Unit * 55
+			else
+				root.AssemblyLinearVelocity =
+					Vector3.zero
+			end
+
+		end)
+
+	else
+
+		if root then
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
+
+	end
+
+end)
+
+--==================================================
+-- GOD MODE
+--==================================================
+
+makeToggle("🛡️","God Mode",function(on)
+
+	if humanoid then
+
+		if on then
+			humanoid.MaxHealth = math.huge
+			humanoid.Health = math.huge
+		else
+			humanoid.MaxHealth = 100
+			humanoid.Health = 100
+		end
+
+	end
+
+end)
+
+--==================================================
+-- NPC AIM ASSIST
+--==================================================
+
+local aimOn = false
+
+makeToggle("🎯","NPC Aim Assist",function(on)
+	aimOn = on
+end)
+
+RunService.RenderStepped:Connect(function()
+
+	if not aimOn or not root then
+		return
+	end
+
+	local closest
+	local distance = math.huge
+
+	for _,obj in ipairs(workspace:GetDescendants()) do
+
+		if obj:IsA("Model")
+			and obj ~= player.Character
+			and obj:FindFirstChildOfClass("Humanoid")
+			and obj:FindFirstChild("HumanoidRootPart") then
+
+			local h = obj:FindFirstChildOfClass("Humanoid")
+
+			if h.Health > 0 then
+
+				local d =
+					(obj.HumanoidRootPart.Position-root.Position).Magnitude
+
+				if d < distance then
+					distance = d
+					closest = obj
+				end
+
+			end
+		end
+
+	end
+
+	if closest then
+
+		workspace.CurrentCamera.CFrame =
+			CFrame.lookAt(
+				workspace.CurrentCamera.CFrame.Position,
+				closest.HumanoidRootPart.Position
+			)
+
+	end
+
+end)
+
+--==================================================
+-- KILL NPC
+--==================================================
+
+local killButton = Instance.new("TextButton")
+
+killButton.Size = UDim2.new(1,0,0,42)
+killButton.BackgroundColor3 = Color3.fromRGB(100,35,40)
+killButton.BorderSizePixel = 0
+killButton.Text = "☠️  Kill Nearby NPC"
+killButton.TextColor3 = Color3.new(1,1,1)
+killButton.TextSize = 15
+killButton.Font = Enum.Font.GothamBold
+killButton.Parent = container
+
+local killCorner = Instance.new("UICorner")
+killCorner.CornerRadius = UDim.new(0,9)
+killCorner.Parent = killButton
+
+killButton.MouseButton1Click:Connect(function()
+
+	if not root then return end
+
+	local closest
+	local distance = 35
+
+	for _,obj in ipairs(workspace:GetDescendants()) do
+
+		if obj:IsA("Model")
+			and obj ~= player.Character
+			and obj:FindFirstChildOfClass("Humanoid")
+			and obj:FindFirstChild("HumanoidRootPart") then
+
+			local h = obj:FindFirstChildOfClass("Humanoid")
+
+			if h.Health > 0 then
+
+				local d =
+					(obj.HumanoidRootPart.Position-root.Position).Magnitude
+
+				if d < distance then
+					distance = d
+					closest = obj
+				end
+
+			end
+		end
+
+	end
+
+	if closest then
+
+		local h = closest:FindFirstChildOfClass("Humanoid")
+
+		if h then
+			h.Health = 0
+		end
+
+	end
+
+end)

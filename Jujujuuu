@@ -1,0 +1,176 @@
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- Variables
+local hubEnabled = true
+local autoSteal = false
+local autoFarm = false
+local eggESP = false
+
+-- UI Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JohnberHub"
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+local HubFrame = Instance.new("Frame", ScreenGui)
+HubFrame.Size = UDim2.new(0, 350, 0, 450)
+HubFrame.Position = UDim2.new(0.5, -175, 0.5, -225)
+HubFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+HubFrame.Active = true
+HubFrame.Draggable = true
+HubFrame.Visible = true
+
+-- Title
+local Title = Instance.new("TextLabel", HubFrame)
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+Title.TextColor3 = Color3.new(1,1,1)
+Title.Text = "Johnber Hub"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 24
+Title.TextStrokeTransparency = 0.7
+
+-- Close/Open Button
+local ToggleButton = Instance.new("TextButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 120, 0, 30)
+ToggleButton.Position = UDim2.new(0, 10, 0, 10)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+ToggleButton.TextColor3 = Color3.new(1,1,1)
+ToggleButton.Text = "Close Hub"
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 18
+
+ToggleButton.MouseButton1Click:Connect(function()
+    hubEnabled = not hubEnabled
+    HubFrame.Visible = hubEnabled
+    ToggleButton.Text = hubEnabled and "Close Hub" or "Open Hub"
+end)
+
+-- Helper to create toggles
+local function createToggle(text, pos, callback)
+    local btn = Instance.new("TextButton", HubFrame)
+    btn.Size = UDim2.new(0, 320, 0, 40)
+    btn.Position = pos
+    btn.BackgroundColor3 = Color3.fromRGB(55, 55, 75)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 20
+    btn.Text = text .. ": OFF"
+    btn.AutoButtonColor = true
+
+    local toggled = false
+    btn.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        btn.Text = text .. (toggled and ": ON" or ": OFF")
+        callback(toggled)
+    end)
+end
+
+-- Feature functions
+local function teleportToBase()
+    local basePos = Vector3.new(0, 10, 0) -- Replace with your base's actual coordinates
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(basePos)
+    end
+end
+
+local function teleportToNearestEgg()
+    local nearestEgg = nil
+    local shortestDist = math.huge
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = player.Character.HumanoidRootPart
+
+    for _, egg in pairs(workspace:GetChildren()) do
+        if egg.Name == "Egg" and egg:IsA("BasePart") then
+            local dist = (egg.Position - hrp.Position).magnitude
+            if dist < shortestDist then
+                shortestDist = dist
+                nearestEgg = egg
+            end
+        end
+    end
+
+    if nearestEgg then
+        hrp.CFrame = CFrame.new(nearestEgg.Position + Vector3.new(0, 5, 0))
+    end
+end
+
+local function collectEggs()
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = player.Character.HumanoidRootPart
+    for _, egg in pairs(workspace:GetChildren()) do
+        if egg.Name == "Egg" and egg:IsA("BasePart") then
+            hrp.CFrame = CFrame.new(egg.Position + Vector3.new(0, 5, 0))
+            wait(0.3) -- Allow time to collect egg
+        end
+    end
+end
+
+local function createESPForEggs(enabled)
+    for _, egg in pairs(workspace:GetChildren()) do
+        if egg.Name == "Egg" and egg:IsA("BasePart") then
+            local existing = egg:FindFirstChild("JohnberESP")
+            if enabled then
+                if not existing then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "JohnberESP"
+                    highlight.FillColor = Color3.fromRGB(255, 255, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+                    highlight.Parent = egg
+                end
+            else
+                if existing then
+                    existing:Destroy()
+                end
+            end
+        end
+    end
+end
+
+-- Toggles
+createToggle("Auto Steal", UDim2.new(0, 15, 0, 50), function(state)
+    autoSteal = state
+end)
+
+createToggle("Auto Farm", UDim2.new(0, 15, 0, 100), function(state)
+    autoFarm = state
+end)
+
+createToggle("Egg ESP", UDim2.new(0, 15, 0, 150), function(state)
+    eggESP = state
+    createESPForEggs(state)
+end)
+
+-- Teleport Buttons
+local teleportBaseBtn = Instance.new("TextButton", HubFrame)
+teleportBaseBtn.Size = UDim2.new(0, 320, 0, 40)
+teleportBaseBtn.Position = UDim2.new(0, 15, 0, 200)
+teleportBaseBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 75)
+teleportBaseBtn.TextColor3 = Color3.new(1,1,1)
+teleportBaseBtn.Font = Enum.Font.Gotham
+teleportBaseBtn.TextSize = 20
+teleportBaseBtn.Text = "Teleport to Base"
+teleportBaseBtn.MouseButton1Click:Connect(teleportToBase)
+
+local teleportEggBtn = Instance.new("TextButton", HubFrame)
+teleportEggBtn.Size = UDim2.new(0, 320, 0, 40)
+teleportEggBtn.Position = UDim2.new(0, 15, 0, 250)
+teleportEggBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 75)
+teleportEggBtn.TextColor3 = Color3.new(1,1,1)
+teleportEggBtn.Font = Enum.Font.Gotham
+teleportEggBtn.TextSize = 20
+teleportEggBtn.Text = "Teleport to Nearest Egg"
+teleportEggBtn.MouseButton1Click:Connect(teleportToNearestEgg)
+
+-- Main Loop
+RunService.Heartbeat:Connect(function()
+    if autoSteal or autoFarm then
+        collectEggs()
+        wait(0.5)
+    end
+end)

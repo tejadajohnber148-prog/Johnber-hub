@@ -1,0 +1,425 @@
+--[[
+    Johnber Hub — Loot & Forge Utility
+    WARNING: Heads up! This script has not been verified. Use at your own risk!
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 15)
+
+-- Clean up any previous instance
+if _G.JohnberHubCleanup then
+    pcall(_G.JohnberHubCleanup)
+end
+
+-- ====================================================================
+-- 📦 GAME MODULES & REMOTES
+-- ====================================================================
+local CommunicationUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("CommunicationUtils"))
+local TranslateUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("TranslateUtils"))
+local TrainCTRL = require(ReplicatedStorage:WaitForChild("CTRL"):WaitForChild("TrainCTRL"))
+local HPCTRL = require(ReplicatedStorage:WaitForChild("CTRL"):WaitForChild("HPCTRL"))
+local BackpackData = require(ReplicatedStorage:WaitForChild("LocalData"):WaitForChild("BackpackData"))
+local StageUtils = require(LocalPlayer.PlayerScripts.Manager.StageManager.StageUtils)
+local CameraUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("CameraUtils"))
+local DamageUtils = require(ReplicatedStorage.SkillSystemNew.Utils.DamageUtils)
+local CalculateUtils = require(ReplicatedStorage:WaitForChild("Utils"):WaitForChild("CalculateUtils"))
+
+local WeaponConfig = nil
+local OreConfig = nil
+local WeaponHelper = nil
+local ArmorConfig = nil
+local ArmorHelper = nil
+local DungeonData = nil
+local DungeonFightGUI = nil
+pcall(function() WeaponConfig = require(ReplicatedStorage.Config.Weapon.Config) end)
+pcall(function() OreConfig = require(ReplicatedStorage.Config.Ore.Config) end)
+pcall(function() WeaponHelper = require(ReplicatedStorage.Config.Weapon.Helper) end)
+pcall(function() ArmorConfig = require(ReplicatedStorage.Config.Armor.Config) end)
+pcall(function() ArmorHelper = require(ReplicatedStorage.Config.Armor.Helper) end)
+pcall(function() DungeonData = require(ReplicatedStorage.LocalData.DungeonData) end)
+pcall(function() DungeonFightGUI = require(ReplicatedStorage.GuiUtils.DungeonFightGUI) end)
+local LeftInfoGUI = nil
+local Message = nil
+pcall(function() LeftInfoGUI = require(ReplicatedStorage.GuiUtils.LeftInfoGUI) end)
+pcall(function() Message = require(ReplicatedStorage.GuiUtils.Message) end)
+
+-- Forward declaration of Config & getStageEnemies for hooks
+local Config = {
+    HitAllMobs = true,
+    OneHitKill = true,
+    GodMode = true,
+    FastPacketAllStages = false,
+    FastPacketTower = false,
+    TowerStartRound = 1,
+    AutoForgeBestWeapon = false,
+    AutoEquipBestWeapon = true,
+    AutoRestockOres = false,
+    ForgeTargetMode = "CYCLE", -- "CYCLE", "WEAPON", "ARMOR"
+    ForgeInterval = 1.5,
+    OnlyHighestOres = true,
+    MinOreRarity = 8, -- 8: Secret+, 7: Eternal+
+    AutoSellJunkOres = false,
+}
+local getStageEnemies = nil
+
+-- Hook CalculateUtils for 1-hit kill
+if not _G.Johnber_OriginalCCPlrDamage and CalculateUtils then
+    _G.Johnber_OriginalCCPlrDamage = CalculateUtils.CCPlrDamage
+    CalculateUtils.CCPlrDamage = function(attacker, skillData)
+        if Config.OneHitKill then return 1e35 end
+        return _G.Johnber_OriginalCCPlrDamage(attacker, skillData)
+    end
+end
+
+-- Hook DamageOnce for GodMode + 1HKO
+if not _G.Johnber_OriginalDamageOnce then
+    _G.Johnber_OriginalDamageOnce = HPCTRL.DamageOnce
+end
+HPCTRL.DamageOnce = function(target, amount, ...)
+    if target == LocalPlayer or target == LocalPlayer.Character then
+        if Config.GodMode then return false end
+        return _G.Johnber_OriginalDamageOnce(target, amount, ...)
+    else
+        if Config.OneHitKill then
+            local cur = HPCTRL.GetCurrentHP(target) or 0
+            local max = HPCTRL.GetMaxHP(target) or 0
+            amount = math.max(cur * 2, max * 2, 1e35)
+        end
+        return _G.Johnber_OriginalDamageOnce(target, amount, ...)
+    end
+end
+
+-- Full-room AoE
+if not _G.Johnber_OriginalTryFireDamageEvent and DamageUtils and DamageUtils.TryFireDamageEvent then
+    _G.Johnber_OriginalTryFireDamageEvent = DamageUtils.TryFireDamageEvent
+    DamageUtils.TryFireDamageEvent = function(attacker, hitList, damageInfo)
+        local isSelf = (attacker == LocalPlayer or attacker == LocalPlayer.Character)
+        if isSelf then
+            if Config.HitAllMobs and getStageEnemies then
+                local stageMobs = getStageEnemies() or {}
+                local seen = {}
+                for _, v in ipairs(hitList or {}) do if v.UUID then seen[v.UUID] = true end end
+                for _, e in ipairs(stageMobs) do
+                    if not seen[e.uuid] then
+                        table.insert(hitList, { Type = "Enemy", UUID = e.uuid, Model = e.model })
+                    end
+                end
+            end
+            if Config.OneHitKill and damageInfo then damageInfo.Damage = 1e35 end
+        end
+        return _G.Johnber_OriginalTryFireDamageEvent(attacker, hitList, damageInfo)
+    end
+end
+
+-- Disable screen shake
+if not _G.Johnber_OriginalCameraShake then
+    _G.Johnber_OriginalCameraShake = {
+        PosShakeOnce = CameraUtils.PosShakeOnce,
+        DirShakeOnce = CameraUtils.DirShakeOnce,
+        NonShakeOnce = CameraUtils.NonShakeOnce,
+        MoveShake = CameraUtils.MoveShake
+    }
+end
+CameraUtils.PosShakeOnce = function(...) end
+CameraUtils.DirShakeOnce = function(...) end
+CameraUtils.NonShakeOnce = function(...) end
+CameraUtils.MoveShake = function(...) end
+
+-- Remotes
+local Remotes = {
+    TrainOnce = CommunicationUtils.TryGetRemoteEvent("Train", "TrainOnceRE"),
+    IntoAutoTrain = CommunicationUtils.TryGetRemoteEvent("Train", "IntoAutoTrainRE"),
+    ExitAutoTrain = CommunicationUtils.TryGetRemoteEvent("Train", "ExitAutoTrainRE"),
+    ClaimedAllOre = CommunicationUtils.TryGetRemoteEvent("Stage", "ClaimedAllOreRE"),
+    GetOre = CommunicationUtils.TryGetRemoteFunction("Stage", "GetOreRF"),
+    StageFinished = CommunicationUtils.TryGetRemoteFunction("Stage", "StageFinishedRF"),
+    TryRebirth = CommunicationUtils.TryGetRemoteEvent("Rebirth", "TryRebirthRE"),
+    TrySellAll = CommunicationUtils.TryGetRemoteEvent("Backpack", "TrySellAllRE"),
+    ClaimOnline = CommunicationUtils.TryGetRemoteEvent("Online", "TryClaimRE"),
+    ClaimOffline = CommunicationUtils.TryGetRemoteEvent("Offline", "TryClaimOfflineRewardRE"),
+    ClaimDailyDunTicket = CommunicationUtils.TryGetRemoteEvent("Dungeon", "TryClaimDailyDunTicRE"),
+    TryIntoDungeonRF = CommunicationUtils.TryGetRemoteFunction("Dungeon", "TryIntoDungeonRF"),
+    StartRoundRE = CommunicationUtils.TryGetRemoteEvent("Dungeon", "StartRoundRE"),
+    CompleteRoundRF = CommunicationUtils.TryGetRemoteFunction("Dungeon", "CompleteRoundRF"),
+    ExitDungeonRE = CommunicationUtils.TryGetRemoteEvent("Dungeon", "ExitDungeonRE"),
+    ExitDungeonBE = CommunicationUtils.TryGetBindableEvent("Stage", "ExitDungeonBE"),
+    ClaimIndexExp = CommunicationUtils.TryGetRemoteFunction("Index", "TryClaimIndexExpRF"),
+    TryClaimLevelRewardRF = CommunicationUtils.TryGetRemoteFunction("Index", "TryClaimLevelRewardRF"),
+    KillSuperLootRE = CommunicationUtils.TryGetRemoteEvent("SuperLoot", "KillSuperLootRE"),
+    EnemyHitBE = CommunicationUtils.TryGetBindableEvent("Attack", "EnemyHitBE"),
+    UpgradeOnceRE = CommunicationUtils.TryGetRemoteEvent("Upgrade", "UpgradeOnceRE"),
+    TryUsePotionRE = CommunicationUtils.TryGetRemoteEvent("Potion", "TryUsePotionRE"),
+    ForgeRF = CommunicationUtils.TryGetRemoteFunction("Forge", "ForgeRF"),
+    TryEquipItemRE = CommunicationUtils.TryGetRemoteEvent("Backpack", "TryEquipItemRE"),
+    TryUnEquipItemRE = CommunicationUtils.TryGetRemoteEvent("Backpack", "TryUnEquipItemRE"),
+    TrySellItemRE = CommunicationUtils.TryGetRemoteEvent("Backpack", "TrySellItemRE"),
+    ATKOnceBE = CommunicationUtils.TryGetBindableEvent("Attack", "ATKOnceBE"),
+    UseSkillByIndexBE = CommunicationUtils.TryGetBindableEvent("Skill", "UseSkillByIndexBE"),
+    ExitFightBE = CommunicationUtils.TryGetBindableEvent("Stage", "ExitFightBE"),
+}
+
+-- Suppress "full pack" messages
+if not _G.Johnber_OriginalShowMessage and Message and Message.showMessage then
+    _G.Johnber_OriginalShowMessage = Message.showMessage
+    Message.showMessage = function(text, ...)
+        local s = tostring(text or "")
+        if s:find("full") or s:find("Pack is full") then
+            pcall(function() Remotes.ClaimedAllOre:FireServer() end)
+            pcall(function() LeftInfoGUI.UpdateOrePack(0) end)
+            return
+        end
+        return _G.Johnber_OriginalShowMessage(text, ...)
+    end
+end
+if LeftInfoGUI then LeftInfoGUI.GetOrePack = function() return 0 end end
+
+-- ====================================================================
+-- ⚙️ CONFIGURATION & RUNTIME
+-- ====================================================================
+Config.SelectedStage = 1
+Config.AutoStageLoop = false
+Config.SuperLootSniper = true
+Config.OreMagnet = true
+Config.SpeedBoost = true
+Config.TargetWalkSpeed = 50
+Config.AutoPotion = false
+Config.AutoUpgradeStats = true
+Config.AutoAttackMobs = false
+
+Config.AutoClaimOres = true
+Config.AutoSellBag = false
+Config.AutoClaimRewards = true
+
+Config.AutoTrain = false
+Config.AutoRebirth = false
+Config.AntiAFK = true
+
+Config.SpeedMode = "HYPER"
+Config.TrainDelay = 0.12
+
+local currentStageAttr = LocalPlayer:GetAttribute("StageID")
+if currentStageAttr then
+    local num = tonumber(string.match(tostring(currentStageAttr), "%d+"))
+    if num and num >= 1 and num <= 22 then Config.SelectedStage = num end
+end
+
+local Runtime = {
+    Running = true,
+    ActiveTab = "Combat",
+    TotalTrained = 0,
+    TotalOresClaimed = 0,
+    TotalMobsKilled = 0,
+    TotalWeaponsForged = 0,
+    TotalTowerRounds = 0,
+    TotalTowerRuns = 0,
+    ForgeHistory = {},
+    StartPower = 0,
+    Logs = {},
+    Connections = {},
+    Threads = {}
+}
+
+local function addLog(msg)
+    table.insert(Runtime.Logs, 1, string.format("[Johnber Hub] %s — %s", os.date("%X"), msg))
+    if #Runtime.Logs > 30 then table.remove(Runtime.Logs) end
+end
+
+local Suffixes = {
+    {1e+33, "Dc"}, {1e+30, "No"}, {1e+27, "Oc"}, {1e+24, "Sp"},
+    {1e+21, "Sx"}, {1e+18, "Qi"}, {1e+15, "Qa"}, {1e+12, "T"},
+    {1e+9, "B"}, {1e+6, "M"}, {1e+3, "K"}
+}
+local function formatNumber(n)
+    local num = tonumber(n)
+    if not num then return tostring(n or "0") end
+    for _, it in ipairs(Suffixes) do
+        if num >= it[1] then return string.format("%.2f%s", num / it[1], it[2]) end
+    end
+    return tostring(math.floor(num))
+end
+
+local function getEcoStat(name)
+    local eco = LocalPlayer:FindFirstChild("Eco")
+    local v = eco and eco:FindFirstChild(name)
+    return v and v.Value or 0
+end
+Runtime.StartPower = getEcoStat("power")
+
+-- ====================================================================
+-- 💎 ORE FILTERS
+-- ====================================================================
+local function getOreRarity(id)
+    if not id then return 1 end
+    id = tostring(id):match("Ore_%d+") or tostring(id)
+    if OreConfig then
+        local cfg = OreConfig[id]
+        if cfg and cfg.Rarity then return cfg.Rarity end
+    end
+    local n = tonumber(id:match("%d+"))
+    if not n then return 1 end
+    if n >= 48 then return 10 elseif n >= 40 then return 9
+    elseif n >= 32 then return 8 elseif n >= 26 then return 7
+    elseif n >= 20 then return 6 elseif n >= 15 then return 5
+    elseif n >= 10 then return 4 elseif n >= 6 then return 3
+    elseif n >= 3 then return 2 else return 1 end
+end
+local function isOreHighTier(id)
+    return not Config.OnlyHighestOres or getOreRarity(id) >= (Config.MinOreRarity or 8)
+end
+
+-- ====================================================================
+-- 🕹️ ACTIONS
+-- ====================================================================
+local ToggleSetters = {}
+local Actions = {}
+_G.JohnberHubActions = Actions
+_G.JohnberHubConfig = Config
+
+function Actions.StopTrain()
+    pcall(function()
+        if TrainCTRL.ExitAutoTrain then TrainCTRL.ExitAutoTrain() end
+        if TrainCTRL.EndTrain then TrainCTRL.EndTrain() end
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, t in ipairs(hum:GetPlayingAnimationTracks()) do
+                if t.Name:lower():find("train") then t:Stop() end
+            end
+        end
+    end)
+    addLog("Stopped Auto Train.")
+end
+
+function Actions.StopStage()
+    Config.AutoStageLoop = false
+    Config.AutoAttackMobs = false
+    pcall(function() if Remotes.ExitFightBE then Remotes.ExitFightBE:Fire(true) end end)
+    pcall(function() if TranslateUtils and TranslateUtils.ToSpawn then TranslateUtils.ToSpawn(LocalPlayer.Character) end end)
+    LocalPlayer:SetAttribute("IntoFight", nil)
+    addLog(string.format("🛑 Stopped Stage %d", Config.SelectedStage))
+end
+
+function Actions.TrainOnce()
+    if Remotes.TrainOnce then pcall(function() Remotes.TrainOnce:FireServer() end) end
+    Runtime.TotalTrained += 1
+end
+
+function Actions.StartAutoTrain()
+    local aid = LocalPlayer:GetAttribute("AutoTrainAreaID") or 5
+    if Remotes.IntoAutoTrain then pcall(function() Remotes.IntoAutoTrain:FireServer(aid) end) end
+    addLog("⚡ Auto Train started")
+end
+
+function Actions.ClaimAllOres()
+    local oc = workspace:FindFirstChild("OreCache")
+    local cnt = 0
+    if oc then
+        for _, ore in ipairs(oc:GetChildren()) do
+            if isOreHighTier(ore.Name) then
+                local prompt = ore:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if prompt and fireproximityprompt then pcall(function() fireproximityprompt(prompt) end); cnt += 1 end
+            end
+        end
+    end
+    pcall(function() Remotes.ClaimedAllOre:FireServer() end)
+    pcall(function() LeftInfoGUI.UpdateOrePack(0) end)
+    Runtime.TotalOresClaimed += cnt
+end
+
+function Actions.StartStage(n)
+    pcall(function() StageUtils.StartFight("Stage_"..n) end)
+    addLog("Started Stage "..n)
+end
+
+function Actions.PacketClearAllStages()
+    local total = 0
+    local start = Config.OnlyHighestOres and (Config.MinOreRarity >= 8 and 21 or 18) or 1
+    for i = start, 22 do
+        local ok, res = pcall(function() return Remotes.StageFinished:InvokeServer("Stage_"..i) end)
+        if ok and type(res) == "table" then
+            for _, oreType in pairs(res) do
+                if isOreHighTier(oreType) then
+                    pcall(function() if Remotes.GetOre:InvokeServer(_) then total += 1 end end)
+                end
+            end
+        end
+        pcall(function() Remotes.ClaimedAllOre:FireServer() end)
+    end
+    if Config.AutoSellBag then pcall(function() BackpackData.SellAll() end) end
+    addLog("⚡ Cleared stages "..start.."-22: +"..total.." ores")
+end
+
+-- Tower Function
+function Actions.PacketClearTower(startRound)
+    startRound = startRound or Config.TowerStartRound or 1
+    local tickets = 0
+    if BackpackData and BackpackData.GetItemDataByIDType then
+        local item = BackpackData.GetItemDataByIDType("Dungeon_Ticket", "Material")
+        tickets = item and item.Number or 0
+    end
+    if tickets <= 0 then
+        addLog("❌ No dungeon tickets! Stopped tower.")
+        return 0
+    end
+
+    local runs = 0
+    while tickets > 0 and Runtime.Running do
+        tickets -= 1; runs += 1
+        addLog("🏰 Tower run #"..runs.." starting round "..startRound)
+
+        local ok, err = pcall(function()
+            local dungeon = Remotes.TryIntoDungeonRF:InvokeServer("Tower")
+            if not dungeon then error("Failed enter") end
+
+            for r = startRound, 999 do
+                Remotes.StartRoundRE:FireServer(r)
+                task.wait(0.4)
+                local done = Remotes.CompleteRoundRF:InvokeServer(r, true)
+                if not done then break end
+                Runtime.TotalTowerRounds += 1
+                if r % 5 == 0 then task.wait(0.75) end
+            end
+            Remotes.ExitDungeonRE:FireServer()
+        end)
+
+        if not ok then
+            addLog("⚠️ Tower error: "..tostring(err))
+            task.wait(1)
+        end
+        Runtime.TotalTowerRuns += 1
+        task.wait(1)
+    end
+    addLog("✅ Tower done — "..runs.." runs")
+    return runs
+end
+
+-- ====================================================================
+-- 🧹 CLEANUP
+-- ====================================================================
+_G.JohnberHubCleanup = function()
+    Runtime.Running = false
+    for _, c in pairs(Runtime.Connections) do pcall(function() c:Disconnect() end) end
+    for _, t in pairs(Runtime.Threads) do pcall(function() task.cancel(t) end) end
+    if _G.Johnber_OriginalDamageOnce then HPCTRL.DamageOnce = _G.Johnber_OriginalDamageOnce end
+    if _G.Johnber_OriginalCCPlrDamage then CalculateUtils.CCPlrDamage = _G.Johnber_OriginalCCPlrDamage end
+    if _G.Johnber_OriginalTryFireDamageEvent then DamageUtils.TryFireDamageEvent = _G.Johnber_OriginalTryFireDamageEvent end
+    if _G.Johnber_OriginalShowMessage then Message.showMessage = _G.Johnber_OriginalShowMessage end
+    if _G.Johnber_OriginalCameraShake then
+        CameraUtils.PosShakeOnce = _G.Johnber_OriginalCameraShake.PosShakeOnce
+        CameraUtils.DirShakeOnce = _G.Johnber_OriginalCameraShake.DirShakeOnce
+        CameraUtils.NonShakeOnce = _G.Johnber_OriginalCameraShake.NonShakeOnce
+        CameraUtils.MoveShake = _G.Johnber_OriginalCameraShake.MoveShake
+    end
+    _G.JohnberHubConfig = nil
+    _G.JohnberHubActions = nil
+    addLog("✅ Johnber Hub unloaded")
+end
+
+addLog("✅ Johnber Hub loaded successfully")
+return Actions
